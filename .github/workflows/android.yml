@@ -33,27 +33,33 @@ jobs:
             "https://github.com/gradle/gradle/raw/v8.9.0/gradle/wrapper/gradle-wrapper.jar" \
             -o gradle/wrapper/gradle-wrapper.jar
 
-      # ── 4. Fix drawable filenames (hyphens → underscores) ──────────────────
+      # ── 4. Remove non-resource files from drawable folders ─────────────────
+      # Android only allows .png/.jpg/.webp/.gif/.xml in res/drawable.
+      # atlas.txt (and any other .txt/.md files) must be removed.
+      - name: Remove invalid files from drawable folders
+        run: |
+          echo "Removing non-resource files from drawable directories..."
+          find app/src/main/res/drawable* -type f \
+            ! -name "*.png" \
+            ! -name "*.jpg" \
+            ! -name "*.jpeg" \
+            ! -name "*.webp" \
+            ! -name "*.gif" \
+            ! -name "*.xml" \
+            -exec echo "Removing: {}" \; \
+            -exec rm {} \;
+          echo "Done."
+
+      # ── 5. Fix drawable filenames (hyphens → underscores) ──────────────────
       # Android resource names only allow a-z, 0-9, and underscore.
-      # Files like yellowbird-midflap.png must become yellowbird_midflap.png.
       - name: Rename drawable files (replace hyphens with underscores)
         run: |
-          DRAWABLE_DIR="app/src/main/res/drawable"
-          for f in "$DRAWABLE_DIR"/*-*.png "$DRAWABLE_DIR"/*-*.xml "$DRAWABLE_DIR"/*-*.jpg; do
-            [ -e "$f" ] || continue
+          for f in $(find app/src/main/res/drawable* -type f -name "*-*"); do
             newname=$(echo "$f" | tr '-' '_')
-            mv "$f" "$newname"
-            echo "Renamed: $f -> $newname"
-          done
-          for dir in app/src/main/res/drawable-*/; do
-            for f in "$dir"*-*; do
-              [ -e "$f" ] || continue
-              newname=$(echo "$f" | tr '-' '_')
-              [ "$f" != "$newname" ] && mv "$f" "$newname" && echo "Renamed: $f -> $newname"
-            done
+            [ "$f" != "$newname" ] && mv "$f" "$newname" && echo "Renamed: $f -> $newname"
           done
 
-      # ── 5. Fix Java/XML source references to match renamed drawables ────────
+      # ── 6. Fix Java/XML source references to match renamed drawables ────────
       - name: Update source references to match renamed drawables
         run: |
           find app/src/main/java app/src/main/res -type f \( -name "*.java" -o -name "*.xml" \) | \
@@ -70,11 +76,11 @@ jobs:
                     s/pipe-green/pipe_green/g' "$file"
           done
 
-      # ── 6. Make gradlew executable ─────────────────────────────────────────
+      # ── 7. Make gradlew executable ─────────────────────────────────────────
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # ── 7. Cache Gradle dependencies ───────────────────────────────────────
+      # ── 8. Cache Gradle dependencies ───────────────────────────────────────
       - name: Cache Gradle packages
         uses: actions/cache@v4
         with:
@@ -85,11 +91,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      # ── 8. Build DEBUG APK ─────────────────────────────────────────────────
+      # ── 9. Build DEBUG APK ─────────────────────────────────────────────────
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
 
-      # ── 9. Upload Debug APK ────────────────────────────────────────────────
+      # ── 10. Upload Debug APK ───────────────────────────────────────────────
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -97,11 +103,11 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
-      # ── 10. Build RELEASE APK (unsigned) ───────────────────────────────────
+      # ── 11. Build RELEASE APK (unsigned) ───────────────────────────────────
       - name: Build Release APK (unsigned)
         run: ./gradlew assembleRelease --stacktrace
 
-      # ── 11. Upload Release APK ─────────────────────────────────────────────
+      # ── 12. Upload Release APK ─────────────────────────────────────────────
       - name: Upload Release APK (unsigned)
         uses: actions/upload-artifact@v4
         with:
