@@ -17,7 +17,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── 2. Java 17 (required by AGP 8.7) ───────────────────────────────────
+      # ── 2. Java 17 ─────────────────────────────────────────────────────────
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -79,19 +79,58 @@ jobs:
           done
           echo "Theme references patched."
 
-      # ── 8. Disable ViewBinding for oversized layouts ────────────────────────
-      # settings.xml has hundreds of views; the auto-generated SettingsBinding
-      # constructor exceeds Java's 255-parameter limit and fails to compile.
-      # Adding tools:viewBindingIgnore="true" to the root element skips
-      # binding generation for that layout only.
-      - name: Disable ViewBinding for settings.xml (too many parameters fix)
+      # ── 8. Disable ViewBinding for settings.xml (too-many-parameters fix) ──
+      # settings.xml has hundreds of views; generated SettingsBinding exceeds
+      # Java's 255-parameter constructor limit.
+      # Strategy: use Python to safely parse & patch the XML without
+      # duplicating any namespace declarations.
+      - name: Disable ViewBinding for settings.xml
         run: |
-          SETTINGS_XML="app/src/main/res/layout/settings.xml"
-          if [ -f "$SETTINGS_XML" ]; then
-            # Add tools namespace to root element if not present
-            sed -i 's|xmlns:android="http://schemas.android.com/apk/res/android"|xmlns:android="http://schemas.android.com/apk/res/android"\n    xmlns:tools="http://schemas.android.com/tools"\n    tools:viewBindingIgnore="true"|' "$SETTINGS_XML"
-            echo "Patched settings.xml with viewBindingIgnore=true"
-          fi
+          python3 - <<'EOF'
+          import xml.etree.ElementTree as ET
+          import re
+
+          path = "app/src/main/res/layout/settings.xml"
+
+          with open(path, "r", encoding="utf-8") as f:
+              content = f.read()
+
+          # Already patched? Skip.
+          if 'viewBindingIgnore="true"' in content:
+              print("Already patched, skipping.")
+              exit(0)
+
+          tools_ns = 'http://schemas.android.com/tools'
+          tools_prefix = 'xmlns:tools="http://schemas.android.com/tools"'
+
+          # Add tools namespace declaration if missing
+          if tools_prefix not in content:
+              # Insert after the first xmlns:android declaration
+              content = re.sub(
+                  r'(xmlns:android="http://schemas\.android\.com/apk/res/android")',
+                  r'\1\n    xmlns:tools="http://schemas.android.com/tools"',
+                  content, count=1
+              )
+              print("Added xmlns:tools namespace.")
+          else:
+              print("xmlns:tools already present, not adding again.")
+
+          # Now inject tools:viewBindingIgnore="true" into the root element's
+          # opening tag (after the last attribute before the closing > or />)
+          # We do this by inserting before the first > that closes the root tag.
+          # The root tag spans multiple lines; find where its attribute list ends.
+          content = re.sub(
+              r'(xmlns:tools="http://schemas\.android\.com/tools")',
+              r'\1\n    tools:viewBindingIgnore="true"',
+              content, count=1
+          )
+          print("Injected tools:viewBindingIgnore='true'.")
+
+          with open(path, "w", encoding="utf-8") as f:
+              f.write(content)
+
+          print("Done patching settings.xml.")
+          EOF
 
       # ── 9. Make gradlew executable ─────────────────────────────────────────
       - name: Grant execute permission for gradlew
