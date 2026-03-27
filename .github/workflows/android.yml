@@ -33,25 +33,16 @@ jobs:
             "https://github.com/gradle/gradle/raw/v8.9.0/gradle/wrapper/gradle-wrapper.jar" \
             -o gradle/wrapper/gradle-wrapper.jar
 
-      # ── 4. Remove non-resource files from drawable folders ─────────────────
+      # ── 4. Remove invalid files from drawable folders ──────────────────────
       # Android only allows .png/.jpg/.webp/.gif/.xml in res/drawable.
-      # atlas.txt (and any other .txt/.md files) must be removed.
       - name: Remove invalid files from drawable folders
         run: |
-          echo "Removing non-resource files from drawable directories..."
           find app/src/main/res/drawable* -type f \
-            ! -name "*.png" \
-            ! -name "*.jpg" \
-            ! -name "*.jpeg" \
-            ! -name "*.webp" \
-            ! -name "*.gif" \
-            ! -name "*.xml" \
-            -exec echo "Removing: {}" \; \
-            -exec rm {} \;
-          echo "Done."
+            ! -name "*.png" ! -name "*.jpg" ! -name "*.jpeg" \
+            ! -name "*.webp" ! -name "*.gif" ! -name "*.xml" \
+            -exec echo "Removing: {}" \; -exec rm {} \;
 
       # ── 5. Fix drawable filenames (hyphens → underscores) ──────────────────
-      # Android resource names only allow a-z, 0-9, and underscore.
       - name: Rename drawable files (replace hyphens with underscores)
         run: |
           for f in $(find app/src/main/res/drawable* -type f -name "*-*"); do
@@ -76,11 +67,27 @@ jobs:
                     s/pipe-green/pipe_green/g' "$file"
           done
 
-      # ── 7. Make gradlew executable ─────────────────────────────────────────
+      # ── 7. Fix Material3 Expressive theme references ────────────────────────
+      # Theme.Material3Expressive.* and ThemeOverlay.Material3Expressive.*
+      # only exist in material:1.4.0-alpha+. Replace with stable Material3
+      # equivalents so the project builds with the current 1.12.0 dependency.
+      - name: Replace Material3Expressive themes with stable Material3 themes
+        run: |
+          find app/src/main/res -type f -name "*.xml" | while read file; do
+            sed -i \
+              's/Theme\.Material3Expressive\.DayNight\.NoActionBar/Theme.Material3.DayNight.NoActionBar/g;
+               s/Theme\.Material3Expressive\.DayNight/Theme.Material3.DayNight/g;
+               s/Theme\.Material3Expressive\./Theme.Material3./g;
+               s/ThemeOverlay\.Material3Expressive\./ThemeOverlay.Material3./g;
+               s/ThemeOverlay\.Material3Expressive/ThemeOverlay.Material3/g' "$file"
+            done
+          echo "Theme references patched."
+
+      # ── 8. Make gradlew executable ─────────────────────────────────────────
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # ── 8. Cache Gradle dependencies ───────────────────────────────────────
+      # ── 9. Cache Gradle dependencies ───────────────────────────────────────
       - name: Cache Gradle packages
         uses: actions/cache@v4
         with:
@@ -91,11 +98,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      # ── 9. Build DEBUG APK ─────────────────────────────────────────────────
+      # ── 10. Build DEBUG APK ────────────────────────────────────────────────
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
 
-      # ── 10. Upload Debug APK ───────────────────────────────────────────────
+      # ── 11. Upload Debug APK ───────────────────────────────────────────────
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -103,11 +110,11 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
-      # ── 11. Build RELEASE APK (unsigned) ───────────────────────────────────
+      # ── 12. Build RELEASE APK (unsigned) ───────────────────────────────────
       - name: Build Release APK (unsigned)
         run: ./gradlew assembleRelease --stacktrace
 
-      # ── 12. Upload Release APK ─────────────────────────────────────────────
+      # ── 13. Upload Release APK ─────────────────────────────────────────────
       - name: Upload Release APK (unsigned)
         uses: actions/upload-artifact@v4
         with:
