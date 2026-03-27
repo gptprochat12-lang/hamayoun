@@ -34,7 +34,6 @@ jobs:
             -o gradle/wrapper/gradle-wrapper.jar
 
       # ── 4. Remove invalid files from drawable folders ──────────────────────
-      # Android only allows .png/.jpg/.webp/.gif/.xml in res/drawable.
       - name: Remove invalid files from drawable folders
         run: |
           find app/src/main/res/drawable* -type f \
@@ -68,9 +67,6 @@ jobs:
           done
 
       # ── 7. Fix Material3 Expressive theme references ────────────────────────
-      # Theme.Material3Expressive.* and ThemeOverlay.Material3Expressive.*
-      # only exist in material:1.4.0-alpha+. Replace with stable Material3
-      # equivalents so the project builds with the current 1.12.0 dependency.
       - name: Replace Material3Expressive themes with stable Material3 themes
         run: |
           find app/src/main/res -type f -name "*.xml" | while read file; do
@@ -80,14 +76,28 @@ jobs:
                s/Theme\.Material3Expressive\./Theme.Material3./g;
                s/ThemeOverlay\.Material3Expressive\./ThemeOverlay.Material3./g;
                s/ThemeOverlay\.Material3Expressive/ThemeOverlay.Material3/g' "$file"
-            done
+          done
           echo "Theme references patched."
 
-      # ── 8. Make gradlew executable ─────────────────────────────────────────
+      # ── 8. Disable ViewBinding for oversized layouts ────────────────────────
+      # settings.xml has hundreds of views; the auto-generated SettingsBinding
+      # constructor exceeds Java's 255-parameter limit and fails to compile.
+      # Adding tools:viewBindingIgnore="true" to the root element skips
+      # binding generation for that layout only.
+      - name: Disable ViewBinding for settings.xml (too many parameters fix)
+        run: |
+          SETTINGS_XML="app/src/main/res/layout/settings.xml"
+          if [ -f "$SETTINGS_XML" ]; then
+            # Add tools namespace to root element if not present
+            sed -i 's|xmlns:android="http://schemas.android.com/apk/res/android"|xmlns:android="http://schemas.android.com/apk/res/android"\n    xmlns:tools="http://schemas.android.com/tools"\n    tools:viewBindingIgnore="true"|' "$SETTINGS_XML"
+            echo "Patched settings.xml with viewBindingIgnore=true"
+          fi
+
+      # ── 9. Make gradlew executable ─────────────────────────────────────────
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # ── 9. Cache Gradle dependencies ───────────────────────────────────────
+      # ── 10. Cache Gradle dependencies ──────────────────────────────────────
       - name: Cache Gradle packages
         uses: actions/cache@v4
         with:
@@ -98,11 +108,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      # ── 10. Build DEBUG APK ────────────────────────────────────────────────
+      # ── 11. Build DEBUG APK ────────────────────────────────────────────────
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
 
-      # ── 11. Upload Debug APK ───────────────────────────────────────────────
+      # ── 12. Upload Debug APK ───────────────────────────────────────────────
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -110,11 +120,11 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
-      # ── 12. Build RELEASE APK (unsigned) ───────────────────────────────────
+      # ── 13. Build RELEASE APK (unsigned) ───────────────────────────────────
       - name: Build Release APK (unsigned)
         run: ./gradlew assembleRelease --stacktrace
 
-      # ── 13. Upload Release APK ─────────────────────────────────────────────
+      # ── 14. Upload Release APK ─────────────────────────────────────────────
       - name: Upload Release APK (unsigned)
         uses: actions/upload-artifact@v4
         with:
